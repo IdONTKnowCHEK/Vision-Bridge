@@ -4,6 +4,7 @@ import 'package:nfc_manager/nfc_manager.dart';
 import '../services/audio_service.dart';
 import '../services/speech_service.dart';
 import '../services/api_service.dart';
+import '../services/storage_service.dart';
 import '../utils/constants.dart';
 import '../services/microphone_service.dart';
 import '../components/audio_visualizer.dart';
@@ -27,6 +28,10 @@ class _NfcScreenState extends State<NfcScreen> {
   bool _isInConversationFlow = false;
   bool _isCancelled = false;
   bool _isMicrophoneActive = false;
+  bool _hasPlayedTapToSpeak = false;
+  String? customColor = StorageService.getCustom();
+
+
   AudioVisualizerMode _audioMode = AudioVisualizerMode.loading;
   final MicrophoneService _microphoneService = MicrophoneService();
 
@@ -91,11 +96,6 @@ class _NfcScreenState extends State<NfcScreen> {
       setState(() {
         _audioMode = AudioVisualizerMode.loading;
       });
-      // test
-      setState(() {
-        _isProcessing = true;
-      });
-      await _processNfcContentForTest('1');
     }
   }
 
@@ -118,7 +118,9 @@ class _NfcScreenState extends State<NfcScreen> {
           });
 
           String? textContent = _readNdefText(tag);
+          await AudioService.playAndWait(AppConstants.triggerNfc);
 
+          print(textContent);
           if (!mounted) return;
 
           if (textContent != null) {
@@ -192,8 +194,9 @@ class _NfcScreenState extends State<NfcScreen> {
       setState(() {
         _audioMode = AudioVisualizerMode.loading;
       });
-
-      final response = await ApiService.processNfcContent(nfcContent, widget.country);
+      print(widget.country);
+      print(customColor);
+      final response = await ApiService.processNfcContent(nfcContent, widget.country, customColor);
       if (!mounted) return;
 
       setState(() {
@@ -207,9 +210,11 @@ class _NfcScreenState extends State<NfcScreen> {
 
       await Future.delayed(const Duration(milliseconds: 300));
 
-      if (_hasValidConversationId) {
-        await AudioService.playAndWait(AppConstants.tap_to_speak);
+      if (_hasValidConversationId && !_hasPlayedTapToSpeak) {
+        await AudioService.playAndWait(AppConstants.tapToSpeak);
+        _hasPlayedTapToSpeak = true;
       }
+
 
       setState(() {
         _isProcessing = false;
@@ -233,49 +238,6 @@ class _NfcScreenState extends State<NfcScreen> {
     }
   }
 
-  Future<void> _processNfcContentForTest(String testContent) async {
-    if (!mounted) return;
-    try {
-      final response = await ApiService.processNfcContent(testContent, widget.country);
-      if (!mounted) return;
-
-      setState(() {
-        _conversation_Id = response.conversationId;
-        _hasValidConversationId = true;
-        _audioMode = AudioVisualizerMode.systemPlaying;
-      });
-
-      await AudioService.playFromBytesAndWait(response.audioByteStream, response.conversationId);
-
-      if (!mounted) return;
-
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      if (_hasValidConversationId) {
-        await AudioService.playAndWait(AppConstants.tap_to_speak);
-      }
-
-      setState(() {
-        _isProcessing = false;
-        _audioMode = AudioVisualizerMode.loading;
-      });
-
-      if (!_isInConversationFlow) {
-        _startNfcDetection();
-      }
-    } catch (e) {
-      if (!mounted) return;
-      print('處理測試內容時出錯: $e');
-      setState(() {
-        _isProcessing = false;
-        _audioMode = AudioVisualizerMode.loading;
-      });
-
-      if (!_isInConversationFlow) {
-        _startNfcDetection();
-      }
-    }
-  }
 
   Future<void> _startListening() async {
     _isCancelled = false;

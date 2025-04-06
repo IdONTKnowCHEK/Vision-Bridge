@@ -22,4 +22,12 @@ class StorageService {
   static String? getCountry() {
     return _prefs.getString('mapping_country');
   }
+
+  static Future<void> saveCustom(String custom) async {
+    await _prefs.setString('custom_color', custom);
+  }
+
+  static String? getCustom() {
+    return _prefs.getString('custom_color') ?? '';
+  }
 }

@@ -4,10 +4,10 @@ import '../models/country_model.dart';
 import '../models/description_model.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://140.120.13.244:11304'; // 替換為實際的 API URL
+  static const String baseUrl = 'http://140.120.13.244:11304';
 
   static Future<CountryResponse> sendCountry(String text) async {
-    return CountryResponse(success: true, mappingCountry: '日本');
+    return CountryResponse(success: true, mappingCountry: '大中華民族');
 
     try {
       final response = await http.post(
@@ -29,12 +29,13 @@ class ApiService {
   }
 
   static Future<DescriptionResponse> processNfcContent(String nfcContent,
-      String country) async {
+      String country, String? customColor) async {
     final url = Uri.parse('$baseUrl/tts');
     final headers = {'Content-Type': 'application/json'};
     final body = jsonEncode({
-      'nfcContent': nfcContent,
-      'country': country, // Example country
+      'draw_id': nfcContent,
+      'country': country,
+      'custom_color': customColor,
     });
 
     final client = http.Client();
@@ -79,12 +80,12 @@ class ApiService {
   }
 
   static Future<DescriptionResponse> processSpeechContent(String speechText,
-      String conversationId,) async {
+      String conversationId) async {
     final url = Uri.parse('$baseUrl/tts_q');
     final headers = {'Content-Type': 'application/json'};
     final body = jsonEncode({
       'query': speechText,
-      'conversationId': conversationId,
+      'conversation_id': conversationId,
     });
 
     final client = http.Client();

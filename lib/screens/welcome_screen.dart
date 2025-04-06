@@ -196,8 +196,11 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
         setState(() {
           _audioMode = AudioVisualizerMode.systemPlaying;
         });
-        await AudioService.playAndWait(AppConstants.doneAudio);
+        await AudioService.playAndWait(AppConstants.gotAudio);
         await StorageService.saveCountry(response.mappingCountry);
+
+        await _promptForCustomColor();
+
         await StorageService.setNotFirstLaunch();
 
         _navigateToNfcScreen(response.mappingCountry);
@@ -215,6 +218,50 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
       });
       await AudioService.playAndWait(AppConstants.retryAudio);
       await _startListening();
+    }
+  }
+
+  Future<void> _promptForCustomColor() async {
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    setState(() {
+      _audioMode = AudioVisualizerMode.systemPlaying;
+    });
+    await AudioService.playAndWait(AppConstants.customColor);
+
+    bool micStarted = await _activateMicrophone();
+    if (!micStarted) {
+      print('麥克風啟動失敗');
+      return;
+    }
+
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    if (mounted) {
+      setState(() {
+        _audioMode = AudioVisualizerMode.userSpeaking;
+      });
+    }
+
+    try {
+      final colorText = await SpeechService.listenAndWait();
+      _deactivateMicrophone();
+
+      setState(() {
+        _audioMode = AudioVisualizerMode.loading;
+      });
+
+      if (colorText.trim().isNotEmpty) {
+        await StorageService.saveCustom(colorText.trim());
+        setState(() {
+          _audioMode = AudioVisualizerMode.systemPlaying;
+        });
+      }
+      await AudioService.playAndWait(AppConstants.doneAudio);
+      print('顏色語音識別成功: $colorText');
+    } catch (e) {
+      _deactivateMicrophone();
+      print('顏色語音識別錯誤: $e');
     }
   }
 
