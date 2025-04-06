@@ -44,6 +44,8 @@ dependencies:
   nfc_manager: ^3.3.0
   provider: ^6.0.5
   permission_handler: ^11.4.0
+  noise_meter: ^5.0.2
+
 
 dev_dependencies:
   flutter_test:

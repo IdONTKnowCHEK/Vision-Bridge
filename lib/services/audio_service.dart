@@ -1,4 +1,6 @@
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 import 'dart:typed_data';
 
 class AudioService {
@@ -27,16 +29,24 @@ class AudioService {
     );
   }
 
-  static Future<void> playFromBytesAndWait(Uint8List audioByteStream, int? contentLength) async {
+  static Future<void> playFromBytesAndWait(Uint8List audioByteStream, String? conversationId) async {
 
-    await _audioPlayer.setAudioSource(
-      ProgressiveAudioSource(
-        Uri.dataFromBytes(
-          audioByteStream,
-          mimeType: 'audio/mpeg',
-        ),
-      ),
-    );
+
+    final tempDir = await getTemporaryDirectory();
+    final tempFile = File('${tempDir.path}/audio_$conversationId.mp3');
+    await tempFile.writeAsBytes(audioByteStream);
+
+    // Play from file
+    await _audioPlayer.setFilePath(tempFile.path);
+
+    // await _audioPlayer.setAudioSource(
+    //   ProgressiveAudioSource(
+    //     Uri.dataFromBytes(
+    //       audioByteStream,
+    //       mimeType: 'audio/mpeg',
+    //     ),
+    //   ),
+    // );
 
     try {
       await _audioPlayer.play();

@@ -5,7 +5,6 @@ class DescriptionResponse {
   final Uint8List audioByteStream;
   final int? contentLength;
   final String description;
-
   final String conversationId;
 
   DescriptionResponse({

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:nfc_manager/nfc_manager.dart';
 import '../services/audio_service.dart';
 import '../services/speech_service.dart';
 import '../services/api_service.dart';
 import '../utils/constants.dart';
+import '../services/microphone_service.dart';
+import '../components/audio_visualizer.dart';
 
 class NfcScreen extends StatefulWidget {
   final String country;
@@ -17,151 +20,160 @@ class NfcScreen extends StatefulWidget {
 class _NfcScreenState extends State<NfcScreen> {
   bool _isNfcAvailable = false;
   bool _isProcessing = false;
-  String _nfcStatus = '正在初始化 NFC...';
-  String _nfcContent = '';
-  String _description = '';
-  String? _conversationId;
+  String _conversation_Id = '';
+  bool _hasValidConversationId = false;
+  bool _isListening = false;
+  String _recognizedText = '';
+  bool _isInConversationFlow = false;
+  bool _isCancelled = false;
+  bool _isMicrophoneActive = false;
+  AudioVisualizerMode _audioMode = AudioVisualizerMode.loading;
+  final MicrophoneService _microphoneService = MicrophoneService();
 
   @override
   void initState() {
     super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+    ));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initNfc();
     });
   }
 
+  Future<bool> _activateMicrophone() async {
+    if (_isMicrophoneActive) {
+      _microphoneService.stopListening();
+    }
+
+    bool hasPermission = await _microphoneService.startListening();
+    if (mounted) {
+      setState(() {
+        _isMicrophoneActive = hasPermission;
+      });
+    }
+    return hasPermission;
+  }
+
+  void _deactivateMicrophone() {
+    if (_isMicrophoneActive) {
+      _microphoneService.stopListening();
+      setState(() {
+        _isMicrophoneActive = false;
+      });
+    }
+  }
+
   Future<void> _initNfc() async {
     if (!mounted) return;
 
-    // 檢查設備是否支援 NFC
     final isAvailable = await NfcManager.instance.isAvailable();
 
     if (!mounted) return;
 
     setState(() {
       _isNfcAvailable = isAvailable;
-      _nfcStatus = isAvailable ? '正在播放音訊提示...' : '此設備不支援 NFC 功能';
+      _audioMode = AudioVisualizerMode.systemPlaying;
     });
 
-    // 根據NFC支援情況播放相應的音訊
     if (isAvailable) {
       await AudioService.playAndWait(AppConstants.supportNfcAudio);
       if (!mounted) return;
 
       setState(() {
-        _nfcStatus = '請靠近 NFC 裝置...';
+        _audioMode = AudioVisualizerMode.loading;
       });
-
       _startNfcDetection();
     } else {
-      // 不支援 NFC，播放相應提示
       await AudioService.playAndWait(AppConstants.notSupportNfcAudio);
       if (!mounted) return;
-
       setState(() {
-        _nfcStatus = '此設備不支援 NFC 功能，無法進行 NFC 掃描';
+        _audioMode = AudioVisualizerMode.loading;
       });
-
       // test
+      setState(() {
+        _isProcessing = true;
+      });
       await _processNfcContentForTest('1');
     }
   }
 
-// 啟動 NFC 掃描
+
+
   void _startNfcDetection() {
-    // 確保任何現有會話已經停止
+    if (_isInConversationFlow) {
+      print('對話流程進行中，暫時不啟動 NFC 掃描');
+      return;
+    }
+
+    print('啟動 NFC 掃描');
     NfcManager.instance.stopSession().then((_) {
-      // 然後開始新的會話
       NfcManager.instance.startSession(
         onDiscovered: (NfcTag tag) async {
-          // 立即停止會話，避免重複讀取
           await NfcManager.instance.stopSession();
-
-          if (!mounted || _isProcessing) return;
-
+          if (!mounted || _isProcessing || _isInConversationFlow) return;
           setState(() {
             _isProcessing = true;
-            _nfcStatus = '正在讀取 NFC 標籤...';
           });
 
-          // 讀取 NFC 標籤中的 TEXT 資料
           String? textContent = _readNdefText(tag);
 
           if (!mounted) return;
 
           if (textContent != null) {
-            setState(() {
-              _nfcContent = textContent;
-              _nfcStatus = '已讀取 NFC 內容，正在處理...';
-            });
-
-            // 發送 NFC 內容和國家到 API
             await _processNfcContentWithApi(textContent);
           } else {
+            print('nfc辨識失敗');
             setState(() {
-              _nfcStatus = '無法讀取 NFC 文字內容，請再試一次';
               _isProcessing = false;
             });
-
-            // 讀取失敗時重新啟動掃描
             _startNfcDetection();
           }
         },
       ).catchError((e) {
         if (mounted) {
+          print('NFC 啟動會話失敗: $e');
           setState(() {
-            _nfcStatus = 'NFC 掃描啟動失敗: $e';
             _isProcessing = false;
           });
         }
       });
     }).catchError((e) {
       if (mounted) {
-        setState(() {
-          _nfcStatus = '停止先前 NFC 會話失敗: $e';
-        });
+        print('停止先前 NFC 會話失敗: $e');
       }
     });
   }
 
-
-  // 從 NFC 標籤中讀取 TEXT 記錄
   String? _readNdefText(NfcTag tag) {
     try {
-      // 獲取 NDEF 消息
       final ndefTag = Ndef.from(tag);
       if (ndefTag == null) return null;
 
       final cachedMessage = ndefTag.cachedMessage;
       if (cachedMessage == null) return null;
 
-      // 遍歷所有記錄查找文本類型
       for (final record in cachedMessage.records) {
-        // 檢查是否為 TEXT 類型記錄
         if (record.typeNameFormat == NdefTypeNameFormat.nfcWellknown &&
             String.fromCharCodes(record.type) == "T") {
 
           final payload = record.payload;
           if (payload.isEmpty) continue;
 
-          // 第一個字節包含狀態和語言代碼長度
           final statusByte = payload[0];
           final languageCodeLength = statusByte & 0x3F;
 
-          // UTF-8 或 UTF-16 標誌
           final isUtf8 = (statusByte & 0x80) == 0;
 
-          // 跳過語言代碼獲取實際文本
           final textOffset = 1 + languageCodeLength;
           if (textOffset >= payload.length) continue;
 
           final textBytes = payload.sublist(textOffset);
 
-          // 根據編碼解碼文本
           if (isUtf8) {
             return String.fromCharCodes(textBytes);
           } else {
-            // 處理 UTF-16，這裡簡化處理
             return String.fromCharCodes(textBytes);
           }
         }
@@ -174,160 +186,294 @@ class _NfcScreenState extends State<NfcScreen> {
     }
   }
 
-  // 處理 NFC 內容和發送到 API
   Future<void> _processNfcContentWithApi(String nfcContent) async {
     if (!mounted) return;
     try {
-      // 發送 NFC 內容和國家到 API
+      setState(() {
+        _audioMode = AudioVisualizerMode.loading;
+      });
+
       final response = await ApiService.processNfcContent(nfcContent, widget.country);
       if (!mounted) return;
 
-      // 儲存回應
       setState(() {
-        _description = response.description;
-        _conversationId = response.conversationId;
-        _nfcStatus = '正在播放描述音訊...';
+        _conversation_Id = response.conversationId;
+        _hasValidConversationId = true;
+        _audioMode = AudioVisualizerMode.systemPlaying;
       });
 
-      // 直接播放 API 回傳的音訊字節資料
-      await AudioService.playFromBytesAndWait(response.audioByteStream, response.contentLength);
-
+      await AudioService.playFromBytesAndWait(response.audioByteStream, response.conversationId);
       if (!mounted) return;
 
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      if (_hasValidConversationId) {
+        await AudioService.playAndWait(AppConstants.tap_to_speak);
+      }
+
       setState(() {
-        _nfcStatus = '描述播放完成，準備掃描下一個 NFC 標籤';
         _isProcessing = false;
+        _audioMode = AudioVisualizerMode.loading;
       });
-      _startNfcDetection();
+
+      if (!_isInConversationFlow) {
+        _startNfcDetection();
+      }
     } catch (e) {
       if (!mounted) return;
-
+      print('處理 NFC 內容時出錯: $e');
       setState(() {
-        _nfcStatus = '處理 NFC 內容時出錯: $e';
         _isProcessing = false;
+        _audioMode = AudioVisualizerMode.loading;
       });
-      _startNfcDetection();
+
+      if (!_isInConversationFlow) {
+        _startNfcDetection();
+      }
     }
   }
-// 在不支援 NFC 的測試情況下使用
+
   Future<void> _processNfcContentForTest(String testContent) async {
     if (!mounted) return;
     try {
-      // 發送測試內容到 API
       final response = await ApiService.processNfcContent(testContent, widget.country);
       if (!mounted) return;
 
-      // 儲存回應
       setState(() {
-        _description = response.description;
-        _conversationId = response.conversationId;
-        _nfcStatus = '正在播放描述音訊...';
+        _conversation_Id = response.conversationId;
+        _hasValidConversationId = true;
+        _audioMode = AudioVisualizerMode.systemPlaying;
       });
 
-      // 直接播放 API 回傳的音訊字節資料
-      await AudioService.playFromBytesAndWait(response.audioByteStream, response.contentLength);
+      await AudioService.playFromBytesAndWait(response.audioByteStream, response.conversationId);
 
       if (!mounted) return;
 
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      if (_hasValidConversationId) {
+        await AudioService.playAndWait(AppConstants.tap_to_speak);
+      }
+
       setState(() {
-        _nfcStatus = '描述播放完成，測試結束';
+        _isProcessing = false;
+        _audioMode = AudioVisualizerMode.loading;
       });
 
+      if (!_isInConversationFlow) {
+        _startNfcDetection();
+      }
     } catch (e) {
       if (!mounted) return;
-
+      print('處理測試內容時出錯: $e');
       setState(() {
-        _nfcStatus = '處理測試內容時出錯: $e';
+        _isProcessing = false;
+        _audioMode = AudioVisualizerMode.loading;
       });
+
+      if (!_isInConversationFlow) {
+        _startNfcDetection();
+      }
     }
   }
+
+  Future<void> _startListening() async {
+    _isCancelled = false;
+    setState(() {
+      _isProcessing = true;
+      _isInConversationFlow = true;
+    });
+
+    await NfcManager.instance.stopSession();
+
+    bool micStarted = await _activateMicrophone();
+    if (!micStarted) {
+      print('麥克風啟動失敗');
+      if (mounted) {
+        setState(() {
+          _audioMode = AudioVisualizerMode.systemPlaying;
+        });
+        await AudioService.playAndWait(AppConstants.retryAudio);
+        await _startListening();
+      }
+      return;
+    }
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    if (mounted) {
+      setState(() {
+        _recognizedText = '';
+        _isListening = true;
+        _audioMode = AudioVisualizerMode.userSpeaking;
+      });
+    }
+
+    try {
+      final recognizedText = await SpeechService.listenAndWait();
+      if (_isCancelled) {
+        _resetConversationState();
+        return;
+      }
+      print(recognizedText);
+
+      if (mounted) {
+        _deactivateMicrophone();
+
+        setState(() {
+          _isListening = false;
+          _recognizedText = recognizedText;
+          _audioMode = AudioVisualizerMode.loading;
+        });
+
+        if (recognizedText.trim().isEmpty || recognizedText.trim().length < 2) {
+          setState(() {
+            _audioMode = AudioVisualizerMode.systemPlaying;
+          });
+          await AudioService.playAndWait(AppConstants.retryAudio);
+          await _startListening();
+          return;
+        }
+        await _sendSpeechToApi();
+      }
+    } catch (e) {
+      print('語音辨識錯誤：$e');
+      if (_isCancelled) {
+        _resetConversationState();
+        return;
+      }
+      if (mounted) {
+        _deactivateMicrophone();
+        setState(() {
+          _audioMode = AudioVisualizerMode.systemPlaying;
+        });
+        await AudioService.playAndWait(AppConstants.retryAudio);
+        await _startListening();
+      }
+    }
+  }
+  void _resetConversationState() {
+    if (!mounted) return;
+
+    setState(() {
+      _isCancelled = false;
+      _isProcessing = false;
+      _isListening = false;
+      _isInConversationFlow = false;
+      _audioMode = AudioVisualizerMode.loading;
+    });
+
+    _startNfcDetection();
+  }
+  void _stopListening() async {
+    if (!_isListening) return;
+    _isCancelled = true;
+    SpeechService.stopListening();
+    _deactivateMicrophone();
+
+    setState(() {
+      _isListening = false;
+      _isProcessing = false;
+      _audioMode = AudioVisualizerMode.loading;
+      _isInConversationFlow = false;
+    });
+
+
+    _startNfcDetection();
+  }
+
+  Future<void> _sendSpeechToApi() async {
+    if (!mounted) return;
+
+    setState(() {
+      _audioMode = AudioVisualizerMode.loading;
+    });
+
+    try {
+      print('發送語音內容到API: $_recognizedText, conversationId: $_conversation_Id');
+
+      final response = await ApiService.processSpeechContent(
+        _recognizedText,
+        _conversation_Id,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _audioMode = AudioVisualizerMode.systemPlaying;
+      });
+
+      await AudioService.playFromBytesAndWait(response.audioByteStream, response.conversationId);
+
+      if (!mounted) return;
+
+      setState(() {
+        _conversation_Id = response.conversationId;
+        _isProcessing = false;
+        _audioMode = AudioVisualizerMode.loading;
+        _isInConversationFlow = false;
+      });
+
+      _startNfcDetection();
+
+    } catch (e) {
+      print('發送語音內容時出錯: $e');
+      setState(() {
+        _isProcessing = false;
+        _audioMode = AudioVisualizerMode.loading;
+        _isInConversationFlow = false;
+      });
+
+      _startNfcDetection();
+    }
+  }
+
   @override
   void dispose() {
     if (_isNfcAvailable) {
       NfcManager.instance.stopSession();
     }
+    _microphoneService.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final Size screenSize = MediaQuery.of(context).size;
+    final double visualizerSize = screenSize.width * 0.7;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('NFC 偵測'),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              '當前國家: ${widget.country}',
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 30),
-            Icon(
-              Icons.nfc ,
-              size: 80,
-              color: _isProcessing ? Colors.orange : (_isNfcAvailable ? Colors.blue : Colors.grey),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              _nfcStatus,
-              style: const TextStyle(fontSize: 18),
-              textAlign: TextAlign.center,
-            ),
-            if (_nfcContent.isNotEmpty) ...[
-              const SizedBox(height: 30),
-              const Divider(),
-              const SizedBox(height: 10),
-              const Text(
-                'NFC 內容:',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  _nfcContent,
-                  style: const TextStyle(fontSize: 16),
-                ),
-              ),
-            ],
-            if (_description.isNotEmpty) ...[
-              const SizedBox(height: 30),
-              const Divider(),
-              const SizedBox(height: 10),
-              const Text(
-                '描述:',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(12),
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: Text(
-                  _description,
-                  style: const TextStyle(fontSize: 16),
-                ),
-              ),
-              if (_conversationId != null) ...[
-                const SizedBox(height: 15),
-                Text(
-                  '對話 ID: $_conversationId',
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
-                ),
+      extendBodyBehindAppBar: true,
+      body: GestureDetector(
+        onDoubleTap: _hasValidConversationId && !_isProcessing && !_isListening && !_isInConversationFlow
+            ? _startListening
+            : null,
+        onLongPress: _isListening ? _stopListening : null,
+        child: Container(
+          width: double.infinity,
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF202020),
+                Color(0xFF1B1B1B),
               ],
-            ],
-          ],
+            ),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Center(
+              child: CircularAudioVisualizer(
+                mode: _audioMode,
+                size: visualizerSize,
+                microphoneVolumeNotifier: _audioMode == AudioVisualizerMode.userSpeaking
+                    ? _microphoneService.volumeNotifier
+                    : null,
+                amplitude: 0.7,
+              ),
+            ),
+          ),
         ),
       ),
     );
