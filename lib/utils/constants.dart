@@ -10,5 +10,8 @@ class AppConstants {
   static const String triggerNfc = 'assets/audios/trigger_nfc.mp3';
   static const String gotAudio = 'assets/audios/got.mp3';
   static const String customColor = 'assets/audios/custom_color.mp3';
+  static const String nfcNotFound = 'assets/audios/nfc_not_found.mp3';
+  static const String someProblem = 'assets/audios/some_problem.mp3';
+  static const String loadingAudio = 'assets/audios/loading.mp3';
 
 }

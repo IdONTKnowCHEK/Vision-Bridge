@@ -2,6 +2,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/services.dart';
 
+
 class SpeechService {
   static final SpeechToText _speech = SpeechToText();
   static bool _isInitialized = false;
@@ -11,7 +12,6 @@ class SpeechService {
     if (micStatus.isGranted) {
       _isInitialized = await _speech.initialize(
         onStatus: (status) {
-          // 只在狀態改變時提供震動反饋，不額外添加聲音
           if (status == 'listening' || status == 'notListening') {
             HapticFeedback.vibrate();
           }
@@ -26,7 +26,6 @@ class SpeechService {
     if (!_isInitialized) {
       _isInitialized = await _speech.initialize(
         onStatus: (status) {
-          // 只在狀態改變時提供震動反饋，不額外添加聲音
           if (status == 'listening' || status == 'notListening') {
             HapticFeedback.vibrate();
           }
@@ -49,10 +48,9 @@ class SpeechService {
           recognizedText = result.recognizedWords;
         },
         listenFor: const Duration(seconds: 10),
-        localeId: 'zh_TW', // 設定為繁體中文，可依需求調整
+        localeId: 'zh_TW',
       );
 
-      // 等待語音識別結束
       while (_speech.isListening) {
         await Future.delayed(const Duration(milliseconds: 100));
       }

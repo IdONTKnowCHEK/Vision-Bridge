@@ -60,6 +60,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
       });
     }
     return hasPermission;
+    return true;
   }
 
   void _deactivateMicrophone() {
@@ -107,7 +108,11 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
       setState(() {
         _audioMode = AudioVisualizerMode.systemPlaying;
       });
+
+      _deactivateMicrophone();
+      SpeechService.stopListening();
       await AudioService.playAndWait(AppConstants.notSupportSTT);
+
       setState(() {
         _audioMode = AudioVisualizerMode.loading;
       });
@@ -121,9 +126,12 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
       setState(() {
         _audioMode = AudioVisualizerMode.systemPlaying;
       });
+
       _deactivateMicrophone();
+      SpeechService.stopListening();
 
       await AudioService.playAndWait(AppConstants.startAudio);
+
       await _startListening();
     } catch (e) {
       print('無法播放音效或啟動語音識別: $e');
@@ -141,6 +149,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
         setState(() {
           _audioMode = AudioVisualizerMode.systemPlaying;
         });
+        SpeechService.stopListening();
         await AudioService.playAndWait(AppConstants.retryAudio);
         await _startListening();
       }
@@ -158,10 +167,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
     try {
       final recognizedText = await SpeechService.listenAndWait();
 
-      print(recognizedText);
+      _deactivateMicrophone();
+      SpeechService.stopListening();
+
+      print('辨識的文字：$recognizedText');
 
       if (mounted) {
-        _deactivateMicrophone();
+
 
         setState(() {
           _audioMode = AudioVisualizerMode.loading;
@@ -180,6 +192,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
     } catch (e) {
       if (mounted) {
         _deactivateMicrophone();
+        SpeechService.stopListening();
+
         setState(() {
           _audioMode = AudioVisualizerMode.systemPlaying;
         });
@@ -192,22 +206,25 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
   Future<void> _processRecognizedText(String text) async {
     try {
       final response = await ApiService.sendCountry(text);
+      print(response.content);
       if (response.success) {
         setState(() {
           _audioMode = AudioVisualizerMode.systemPlaying;
         });
+        SpeechService.stopListening();
         await AudioService.playAndWait(AppConstants.gotAudio);
-        await StorageService.saveCountry(response.mappingCountry);
+        await StorageService.saveCountry(response.content);
 
         await _promptForCustomColor();
 
         await StorageService.setNotFirstLaunch();
 
-        _navigateToNfcScreen(response.mappingCountry);
+        _navigateToNfcScreen(response.content);
       } else {
         setState(() {
           _audioMode = AudioVisualizerMode.systemPlaying;
         });
+        SpeechService.stopListening();
         await AudioService.playAndWait(AppConstants.retryAudio);
         await _startListening();
       }
@@ -216,6 +233,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
       setState(() {
         _audioMode = AudioVisualizerMode.systemPlaying;
       });
+      SpeechService.stopListening();
       await AudioService.playAndWait(AppConstants.retryAudio);
       await _startListening();
     }
@@ -227,6 +245,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
     setState(() {
       _audioMode = AudioVisualizerMode.systemPlaying;
     });
+    SpeechService.stopListening();
     await AudioService.playAndWait(AppConstants.customColor);
 
     bool micStarted = await _activateMicrophone();
@@ -257,6 +276,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
           _audioMode = AudioVisualizerMode.systemPlaying;
         });
       }
+      SpeechService.stopListening();
       await AudioService.playAndWait(AppConstants.doneAudio);
       print('顏色語音識別成功: $colorText');
     } catch (e) {
@@ -266,6 +286,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
   }
 
   void _navigateToNfcScreen(String country) {
+
+    _deactivateMicrophone();
+    SpeechService.stopListening();
+
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -278,6 +302,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
   void dispose() {
     _microphoneService.dispose();
     _animationController.dispose();
+    SpeechService.stopListening();
     super.dispose();
   }
 

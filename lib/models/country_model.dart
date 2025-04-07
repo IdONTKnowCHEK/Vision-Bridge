@@ -1,13 +1,13 @@
 class CountryResponse {
   final bool success;
-  final String mappingCountry;
+  final String content;
 
-  CountryResponse({required this.success, required this.mappingCountry});
+  CountryResponse({required this.success, required this.content});
 
   factory CountryResponse.fromJson(Map<String, dynamic> json) {
     return CountryResponse(
-      success: json['Success'] ?? false,
-      mappingCountry: json['MappingCountry'] ?? '',
+      success: json['success'] ?? false,
+      content: json['content'] ?? '',
     );
   }
 }

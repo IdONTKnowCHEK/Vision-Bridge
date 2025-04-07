@@ -8,6 +8,9 @@ import '../services/storage_service.dart';
 import '../utils/constants.dart';
 import '../services/microphone_service.dart';
 import '../components/audio_visualizer.dart';
+import 'dart:math' as math;
+
+import 'admin_screen.dart';
 
 class NfcScreen extends StatefulWidget {
   final String country;
@@ -118,7 +121,8 @@ class _NfcScreenState extends State<NfcScreen> {
           });
 
           String? textContent = _readNdefText(tag);
-          await AudioService.playAndWait(AppConstants.triggerNfc);
+          AudioService.play(AppConstants.triggerNfc);
+          await Future.delayed(const Duration(milliseconds: 300));
 
           print(textContent);
           if (!mounted) return;
@@ -194,18 +198,46 @@ class _NfcScreenState extends State<NfcScreen> {
       setState(() {
         _audioMode = AudioVisualizerMode.loading;
       });
-      print(widget.country);
-      print(customColor);
-      final response = await ApiService.processNfcContent(nfcContent, widget.country, customColor);
+      final descriptionResponse = await ApiService.processNfcContent(nfcContent, widget.country, customColor);
+      if (descriptionResponse.description == 'error') {
+        if (!mounted) return;
+
+        setState(() {
+          _audioMode = AudioVisualizerMode.systemPlaying;
+        });
+
+        AudioService.stopAudio();
+        await AudioService.playAndWait(AppConstants.someProblem);
+
+        setState(() {
+          _isProcessing = false;
+          _audioMode = AudioVisualizerMode.loading;
+        });
+
+        if (!_isInConversationFlow) {
+          _startNfcDetection();
+        }
+        return;
+      }
+
+
+      print(descriptionResponse.description);
+
+      AudioService.playLoop(AppConstants.loadingAudio);
+      final ttsResponse = await ApiService.processTTS(descriptionResponse.description);
+
       if (!mounted) return;
 
       setState(() {
-        _conversation_Id = response.conversationId;
+        _conversation_Id = descriptionResponse.conversationId;
         _hasValidConversationId = true;
         _audioMode = AudioVisualizerMode.systemPlaying;
       });
 
-      await AudioService.playFromBytesAndWait(response.audioByteStream, response.conversationId);
+
+      await AudioService.playFromBytesAndWait(ttsResponse.audioByteStream, descriptionResponse.conversationId);
+      // final response = await ApiService.processTTSNan('文字測試');
+      // await AudioService.playFromBytesAndWait(response.audioByteStream, 's',  volume: 1.0);
       if (!mounted) return;
 
       await Future.delayed(const Duration(milliseconds: 300));
@@ -356,15 +388,35 @@ class _NfcScreenState extends State<NfcScreen> {
       final response = await ApiService.processSpeechContent(
         _recognizedText,
         _conversation_Id,
+          widget.country
       );
 
+      if (response.description == 'error') {
+        await AudioService.playAndWait(AppConstants.someProblem);
+
+        setState(() {
+          _isProcessing = false;
+          _audioMode = AudioVisualizerMode.loading;
+          _isInConversationFlow = false;
+        });
+
+        _startNfcDetection();
+        return;
+      }
+
+
       if (!mounted) return;
+
+      print(response.description);
+
+      AudioService.playLoop(AppConstants.loadingAudio);
+      final ttsResponse = await ApiService.processTTS(response.description);
 
       setState(() {
         _audioMode = AudioVisualizerMode.systemPlaying;
       });
 
-      await AudioService.playFromBytesAndWait(response.audioByteStream, response.conversationId);
+      await AudioService.playFromBytesAndWait(ttsResponse.audioByteStream, response.conversationId);
 
       if (!mounted) return;
 
@@ -379,6 +431,9 @@ class _NfcScreenState extends State<NfcScreen> {
 
     } catch (e) {
       print('發送語音內容時出錯: $e');
+
+      await AudioService.playAndWait(AppConstants.nfcNotFound);
+
       setState(() {
         _isProcessing = false;
         _audioMode = AudioVisualizerMode.loading;
@@ -403,6 +458,9 @@ class _NfcScreenState extends State<NfcScreen> {
     final Size screenSize = MediaQuery.of(context).size;
     final double visualizerSize = screenSize.width * 0.7;
 
+    // Store points for gesture detection
+    List<Offset> gesturePoints = [];
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       body: GestureDetector(
@@ -410,6 +468,20 @@ class _NfcScreenState extends State<NfcScreen> {
             ? _startListening
             : null,
         onLongPress: _isListening ? _stopListening : null,
+        // Add L gesture detection
+        onPanStart: (details) {
+          gesturePoints.clear();
+          gesturePoints.add(details.localPosition);
+        },
+        onPanUpdate: (details) {
+          gesturePoints.add(details.localPosition);
+        },
+        onPanEnd: (_) {
+          if (_isLGesture(gesturePoints)) {
+            _navigateToAdminPage(context);
+          }
+          gesturePoints.clear();
+        },
         child: Container(
           width: double.infinity,
           height: double.infinity,
@@ -437,6 +509,85 @@ class _NfcScreenState extends State<NfcScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // Add these methods to your class
+  bool _isLGesture(List<Offset> points) {
+    if (points.length < 10) return false; // Need sufficient points for a gesture
+
+    // Get bounding box
+    double minX = double.infinity;
+    double maxX = 0;
+    double minY = double.infinity;
+    double maxY = 0;
+
+    for (Offset point in points) {
+      minX = math.min(minX, point.dx);
+      maxX = math.max(maxX, point.dx);
+      minY = math.min(minY, point.dy);
+      maxY = math.max(maxY, point.dy);
+    }
+
+    double width = maxX - minX;
+    double height = maxY - minY;
+
+    // Split points into two segments
+    List<Offset> firstHalf = points.sublist(0, points.length ~/ 2);
+    List<Offset> secondHalf = points.sublist(points.length ~/ 2);
+
+    // Calculate average directions
+    double firstHalfVertical = _calculateVerticalDirection(firstHalf);
+    double secondHalfHorizontal = _calculateHorizontalDirection(secondHalf);
+
+    // L shape requirements:
+    // 1. First half should move significantly downward
+    // 2. Second half should move significantly rightward
+    // 3. Overall shape should have sufficient width and height
+    return firstHalfVertical > 0.6 && // First segment goes down
+        secondHalfHorizontal > 0.6 && // Second segment goes right
+        width > 50 && height > 50; // Minimum size requirements
+  }
+
+  double _calculateVerticalDirection(List<Offset> points) {
+    if (points.isEmpty) return 0;
+    double totalVertical = 0;
+    double totalMovement = 0;
+
+    for (int i = 1; i < points.length; i++) {
+      double dy = points[i].dy - points[i - 1].dy;
+      double dx = points[i].dx - points[i - 1].dx;
+      double movement = math.sqrt(dx * dx + dy * dy);
+
+      totalVertical += dy > 0 ? movement : -movement;
+      totalMovement += movement;
+    }
+
+    return totalMovement > 0 ? totalVertical / totalMovement : 0;
+  }
+
+  double _calculateHorizontalDirection(List<Offset> points) {
+    if (points.isEmpty) return 0;
+    double totalHorizontal = 0;
+    double totalMovement = 0;
+
+    for (int i = 1; i < points.length; i++) {
+      double dx = points[i].dx - points[i - 1].dx;
+      double dy = points[i].dy - points[i - 1].dy;
+      double movement = math.sqrt(dx * dx + dy * dy);
+
+      totalHorizontal += dx > 0 ? movement : -movement;
+      totalMovement += movement;
+    }
+
+    return totalMovement > 0 ? totalHorizontal / totalMovement : 0;
+  }
+
+  void _navigateToAdminPage(BuildContext context) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => AdminPanel(),
       ),
     );
   }
