@@ -1,6 +1,7 @@
 # Vision Bridge
 
-A Visionary Art Interpretation LLM App for the Blind.
+#### A Visionary Art Interpretation LLM App for the Blind.  
+<img src="./shot_1.PNG" alt="shot_1" width="500" />
 
 > **For a more detailed development process and API design, please refer to [MangoJump](https://github.com/allen3325/Vision-Bridge-Backend).**
 
