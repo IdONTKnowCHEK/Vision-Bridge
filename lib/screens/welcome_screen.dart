@@ -48,20 +48,19 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
     });
   }
 
-  Future<bool> _activateMicrophone() async {
-    if (_isMicrophoneActive) {
-      _microphoneService.stopListening();
-    }
-
-    bool hasPermission = await _microphoneService.startListening();
-    if (mounted) {
-      setState(() {
-        _isMicrophoneActive = hasPermission;
-      });
-    }
-    return hasPermission;
-    return true;
-  }
+  // Future<bool> _activateMicrophone() async {
+  //   if (_isMicrophoneActive) {
+  //     _microphoneService.stopListening();
+  //   }
+  //
+  //   bool hasPermission = await _microphoneService.startListening();
+  //   if (mounted) {
+  //     setState(() {
+  //       _isMicrophoneActive = hasPermission;
+  //     });
+  //   }
+  //   return hasPermission;
+  // }
 
   void _deactivateMicrophone() {
     if (_isMicrophoneActive) {
@@ -142,19 +141,19 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
   }
 
   Future<void> _startListening() async {
-    bool micStarted = await _activateMicrophone();
-    if (!micStarted) {
-      print('麥克風啟動失敗');
-      if (mounted) {
-        setState(() {
-          _audioMode = AudioVisualizerMode.systemPlaying;
-        });
-        SpeechService.stopListening();
-        await AudioService.playAndWait(AppConstants.retryAudio);
-        await _startListening();
-      }
-      return;
-    }
+    // bool micStarted = await _activateMicrophone();
+    // if (!micStarted) {
+    //   print('麥克風啟動失敗');
+    //   if (mounted) {
+    //     setState(() {
+    //       _audioMode = AudioVisualizerMode.systemPlaying;
+    //     });
+    //     SpeechService.stopListening();
+    //     await AudioService.playAndWait(AppConstants.retryAudio);
+    //     await _startListening();
+    //   }
+    //   return;
+    // }
 
     await Future.delayed(const Duration(milliseconds: 300));
 
@@ -248,11 +247,11 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
     SpeechService.stopListening();
     await AudioService.playAndWait(AppConstants.customColor);
 
-    bool micStarted = await _activateMicrophone();
-    if (!micStarted) {
-      print('麥克風啟動失敗');
-      return;
-    }
+    // bool micStarted = await _activateMicrophone();
+    // if (!micStarted) {
+    //   print('麥克風啟動失敗');
+    //   return;
+    // }
 
     await Future.delayed(const Duration(milliseconds: 300));
 
@@ -316,32 +315,47 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              const Color(0xFF202020),
-              const Color(0xFF1B1B1B),
-            ],
-          ),        ),
-        child: SafeArea(
-          top: false,
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularAudioVisualizer(
-                    mode: _audioMode,
-                    size: visualizerSize,
-                    microphoneVolumeNotifier: _audioMode == AudioVisualizerMode.userSpeaking
-                        ? _microphoneService.volumeNotifier
-                        : null,
-                    amplitude: 0.7,
-                  ),
-                ],
+        // decoration: const BoxDecoration(
+        //   gradient: LinearGradient(
+        //     begin: Alignment.topLeft,
+        //     end: Alignment.bottomRight,
+        //     colors: [
+        //       Color(0xFF202020),
+        //       Color(0xFF1B1B1B),
+        //     ],
+        //   ),
+        // ),
+        child: Container( //New added container
+          decoration: const BoxDecoration(
+            image: DecorationImage(
+              image: AssetImage('assets/images/bg.png'),
+              repeat: ImageRepeat.repeat,
+              fit: BoxFit.none,
+              colorFilter: ColorFilter.mode(
+                Colors.white54,
+                BlendMode.srcATop,
+              ),
+            ),
+          ),
+          child: SafeArea(
+            top: false,
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularAudioVisualizer(
+                      mode: _audioMode,
+                      size: visualizerSize,
+                      microphoneVolumeNotifier:
+                      _audioMode == AudioVisualizerMode.userSpeaking
+                          ? _microphoneService.volumeNotifier
+                          : null,
+                      amplitude: 0.7,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

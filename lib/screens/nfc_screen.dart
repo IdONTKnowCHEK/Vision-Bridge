@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:nfc_manager/nfc_manager.dart';
+import '../models/description_model.dart';
 import '../services/audio_service.dart';
 import '../services/speech_service.dart';
 import '../services/api_service.dart';
@@ -9,6 +10,7 @@ import '../utils/constants.dart';
 import '../services/microphone_service.dart';
 import '../components/audio_visualizer.dart';
 import 'dart:math' as math;
+
 
 import 'admin_screen.dart';
 
@@ -32,6 +34,7 @@ class _NfcScreenState extends State<NfcScreen> {
   bool _isCancelled = false;
   bool _isMicrophoneActive = false;
   bool _hasPlayedTapToSpeak = false;
+  bool _ishokkien = false;
   String? customColor = StorageService.getCustom();
 
 
@@ -50,19 +53,19 @@ class _NfcScreenState extends State<NfcScreen> {
     });
   }
 
-  Future<bool> _activateMicrophone() async {
-    if (_isMicrophoneActive) {
-      _microphoneService.stopListening();
-    }
-
-    bool hasPermission = await _microphoneService.startListening();
-    if (mounted) {
-      setState(() {
-        _isMicrophoneActive = hasPermission;
-      });
-    }
-    return hasPermission;
-  }
+  // Future<bool> _activateMicrophone() async {
+  //   if (_isMicrophoneActive) {
+  //     _microphoneService.stopListening();
+  //   }
+  //
+  //   bool hasPermission = await _microphoneService.startListening();
+  //   if (mounted) {
+  //     setState(() {
+  //       _isMicrophoneActive = hasPermission;
+  //     });
+  //   }
+  //   return hasPermission;
+  // }
 
   void _deactivateMicrophone() {
     if (_isMicrophoneActive) {
@@ -224,7 +227,13 @@ class _NfcScreenState extends State<NfcScreen> {
       print(descriptionResponse.description);
 
       AudioService.playLoop(AppConstants.loadingAudio);
-      final ttsResponse = await ApiService.processTTS(descriptionResponse.description);
+
+      AudioResponse ttsResponse;
+      if (_ishokkien) {
+        ttsResponse = await ApiService.processTTSNan(descriptionResponse.description);
+      } else {
+        ttsResponse = await ApiService.processTTS(descriptionResponse.description);
+      }
 
       if (!mounted) return;
 
@@ -235,9 +244,12 @@ class _NfcScreenState extends State<NfcScreen> {
       });
 
 
-      await AudioService.playFromBytesAndWait(ttsResponse.audioByteStream, descriptionResponse.conversationId);
-      // final response = await ApiService.processTTSNan('文字測試');
-      // await AudioService.playFromBytesAndWait(response.audioByteStream, 's',  volume: 1.0);
+      if (_ishokkien) {
+        await AudioService.playFromBytesAndWait(ttsResponse.audioByteStream, descriptionResponse.conversationId,  volume: 1.0);
+      }
+      else {
+        await AudioService.playFromBytesAndWait(ttsResponse.audioByteStream, descriptionResponse.conversationId);
+      }
       if (!mounted) return;
 
       await Future.delayed(const Duration(milliseconds: 300));
@@ -280,18 +292,19 @@ class _NfcScreenState extends State<NfcScreen> {
 
     await NfcManager.instance.stopSession();
 
-    bool micStarted = await _activateMicrophone();
-    if (!micStarted) {
-      print('麥克風啟動失敗');
-      if (mounted) {
-        setState(() {
-          _audioMode = AudioVisualizerMode.systemPlaying;
-        });
-        await AudioService.playAndWait(AppConstants.retryAudio);
-        await _startListening();
-      }
-      return;
-    }
+    // bool micStarted = await _activateMicrophone();
+    // if (!micStarted) {
+    //   print('麥克風啟動失敗');
+    //   if (mounted) {
+    //     setState(() {
+    //       _audioMode = AudioVisualizerMode.systemPlaying;
+    //     });
+    //     await AudioService.playAndWait(AppConstants.retryAudio);
+    //     await _startListening();
+    //   }
+    //   return;
+    // }
+
     await Future.delayed(const Duration(milliseconds: 300));
 
     if (mounted) {
@@ -359,16 +372,20 @@ class _NfcScreenState extends State<NfcScreen> {
     _startNfcDetection();
   }
   void _stopListening() async {
-    if (!_isListening) return;
+    // if (!_isListening) return;
+    print('stop');
     _isCancelled = true;
+
     SpeechService.stopListening();
     _deactivateMicrophone();
+    AudioService.stopAudio();
 
     setState(() {
       _isListening = false;
       _isProcessing = false;
       _audioMode = AudioVisualizerMode.loading;
       _isInConversationFlow = false;
+      _hasPlayedTapToSpeak = true;
     });
 
 
@@ -385,11 +402,15 @@ class _NfcScreenState extends State<NfcScreen> {
     try {
       print('發送語音內容到API: $_recognizedText, conversationId: $_conversation_Id');
 
+
+
+
       final response = await ApiService.processSpeechContent(
         _recognizedText,
         _conversation_Id,
           widget.country
       );
+
 
       if (response.description == 'error') {
         await AudioService.playAndWait(AppConstants.someProblem);
@@ -410,13 +431,25 @@ class _NfcScreenState extends State<NfcScreen> {
       print(response.description);
 
       AudioService.playLoop(AppConstants.loadingAudio);
-      final ttsResponse = await ApiService.processTTS(response.description);
+
+      AudioResponse ttsResponseQ;
+      if (_ishokkien) {
+        ttsResponseQ = await ApiService.processTTSNan(response.description);
+      } else {
+        ttsResponseQ = await ApiService.processTTS(response.description);
+      }
 
       setState(() {
         _audioMode = AudioVisualizerMode.systemPlaying;
       });
 
-      await AudioService.playFromBytesAndWait(ttsResponse.audioByteStream, response.conversationId);
+      if (_ishokkien) {
+        await AudioService.playFromBytesAndWait(ttsResponseQ.audioByteStream, response.conversationId,  volume: 1.0);
+      }
+      else {
+        await AudioService.playFromBytesAndWait(ttsResponseQ.audioByteStream, response.conversationId);
+      }
+
 
       if (!mounted) return;
 
@@ -467,7 +500,7 @@ class _NfcScreenState extends State<NfcScreen> {
         onDoubleTap: _hasValidConversationId && !_isProcessing && !_isListening && !_isInConversationFlow
             ? _startListening
             : null,
-        onLongPress: _isListening ? _stopListening : null,
+        onLongPress: _isListening || ( _audioMode == AudioVisualizerMode.systemPlaying) ? _stopListening : null,
         // Add L gesture detection
         onPanStart: (details) {
           gesturePoints.clear();
@@ -479,32 +512,49 @@ class _NfcScreenState extends State<NfcScreen> {
         onPanEnd: (_) {
           if (_isLGesture(gesturePoints)) {
             _navigateToAdminPage(context);
+          } else if (_isUpwardSwipe(gesturePoints)) {
+            _ishokkien = !_ishokkien;
+            HapticFeedback.vibrate();
+            print(_ishokkien);
           }
           gesturePoints.clear();
         },
         child: Container(
           width: double.infinity,
           height: double.infinity,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color(0xFF202020),
-                Color(0xFF1B1B1B),
-              ],
+          // decoration: const BoxDecoration(
+          //   gradient: LinearGradient(
+          //     begin: Alignment.topLeft,
+          //     end: Alignment.bottomRight,
+          //     colors: [
+          //       Color(0xFF202020),
+          //       Color(0xFF1B1B1B),
+          //     ],
+          //   ),
+          // ),
+          child: Container(
+            decoration: const BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('assets/images/bg.png'),
+                repeat: ImageRepeat.repeat,
+                fit: BoxFit.none,
+                colorFilter: ColorFilter.mode(
+                  Colors.white54,
+                  BlendMode.srcATop,
+                ),
+              ),
             ),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Center(
-              child: CircularAudioVisualizer(
-                mode: _audioMode,
-                size: visualizerSize,
-                microphoneVolumeNotifier: _audioMode == AudioVisualizerMode.userSpeaking
-                    ? _microphoneService.volumeNotifier
-                    : null,
-                amplitude: 0.7,
+            child: SafeArea(
+              top: false,
+              child: Center(
+                child: CircularAudioVisualizer(
+                  mode: _audioMode,
+                  size: visualizerSize,
+                  microphoneVolumeNotifier: _audioMode == AudioVisualizerMode.userSpeaking
+                      ? _microphoneService.volumeNotifier
+                      : null,
+                  amplitude: 0.7,
+                ),
               ),
             ),
           ),
@@ -590,5 +640,26 @@ class _NfcScreenState extends State<NfcScreen> {
         builder: (context) => AdminPanel(),
       ),
     );
+  }
+  bool _isUpwardSwipe(List<Offset> points) {
+    if (points.length < 10) return false; // Need sufficient points for a gesture
+
+    // Calculate vertical direction
+    double verticalDirection = _calculateVerticalDirection(points);
+
+    // Calculate total vertical distance
+    double minY = double.infinity;
+    double maxY = 0;
+    for (Offset point in points) {
+      minY = math.min(minY, point.dy);
+      maxY = math.max(maxY, point.dy);
+    }
+    double height = maxY - minY;
+
+    // Upward swipe requirements:
+    // 1. Movement should be significantly upward (negative vertical direction)
+    // 2. Should have sufficient vertical distance
+    return verticalDirection < -0.7 && // Mostly upward movement
+        height > 50; // Minimum height requirement
   }
 }

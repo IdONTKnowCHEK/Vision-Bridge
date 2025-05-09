@@ -471,7 +471,7 @@ class _CircularAudioVisualizerState extends State<CircularAudioVisualizer> with 
       height: widget.size * 0.35,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: color.withOpacity(0.2),
+        color: color.withOpacity(0.5),
         boxShadow: [
           BoxShadow(
             color: color.withOpacity(0.2),
