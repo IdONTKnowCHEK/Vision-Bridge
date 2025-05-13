@@ -2,12 +2,33 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+        <!-- If you use url_launcher or similar for opening external apps -->
+        <string>https</string>
+        <string>http</string>
+    </array>
+
     <key>NSMicrophoneUsageDescription</key>
-    <string>需要麥克風權限進行語音識別</string>
+    <string>需要麥克風權限進行語音識別和偵測音量。</string> <!-- Updated for noise_meter -->
+
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>需要語音識別權限處理您的語音指令</string>
+    <string>需要語音識別權限處理您的語音指令。</string>
+
     <key>NFCReaderUsageDescription</key>
-    <string>需要NFC權限來掃描標籤</string>
+    <string>需要NFC權限來掃描標籤。</string>
+
+    <!-- VERY IMPORTANT - Add this if you haven't -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>本應用程式需要存取本地網路以啟用語音辨識或音訊串流功能。</string>
+
+    <key>UIBackgroundModes</key>
+    <array>
+        <!-- Add 'audio' if your app plays audio in the background using just_audio/audio_service -->
+        <string>audio</string>
+        <!-- Add 'fetch' or 'remote-notification' if needed for other background tasks -->
+    </array>
+
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
