@@ -90,20 +90,51 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
   Future<void> _checkPermissions() async {
     print('Checking permissions...');
 
-    final micStatus = await Permission.microphone.request();
+    // 1. 麥克風權限
+    PermissionStatus micStatus = await Permission.microphone.status;
+    print('Initial Microphone status: $micStatus');
+
+    if (micStatus.isDenied || micStatus.isRestricted) { // isDenied 表示用戶還沒選擇，或者選擇了「拒絕」但不是「永不詢問」
+      micStatus = await Permission.microphone.request();
+      print('Microphone status after request: $micStatus');
+    }
+
+    if (micStatus.isPermanentlyDenied) {
+      print('麥克風權限已被永久拒絕，請至「設定」開啟權限');
+      // 提示用戶去設置開啟，可以考慮使用 openAppSettings()
+      await openAppSettings();
+      return;
+    }
+
     if (!micStatus.isGranted) {
       print('需要麥克風權限才能繼續使用，請授予權限後重試');
       return;
     }
 
+    // 2. 語音辨識權限 (如果你的 SpeechService 依賴這個)
+    // speech_to_text 套件通常會在其 initialize 方法中處理 SFSpeechRecognizerAuthorizationStatus
+    // 但你也可以用 permission_handler 檢查 (雖然它沒有直接的 speech_recognition 枚舉給 iOS 的 SFSpeechRecognizer)
+    // 通常，如果麥克風權限被授予，且 Info.plist 有 NSSpeechRecognitionUsageDescription，
+    // speech_to_text 插件內部應該能處理好。
+
+    print('麥克風權限已授予，繼續檢查 STT...');
+
     try {
-      final sttAvailable = await SpeechService.isSTTAvailable();
+      final sttAvailable = await SpeechService.isSTTAvailable(); // 假設這是 speech_to_text 的 initialize 或類似方法
       if (!sttAvailable) {
-        print('您的設備不支援語音辨識功能');
+        print('您的設備不支援語音辨識功能 或 語音辨識權限未授予');
+        // speech_to_text 的 initialize 返回 false 也可能是因為語音辨識權限未授予
+        // 此時可以檢查 SFSpeechRecognizerAuthorizationStatus (如果能直接訪問) 或提示用戶
         return;
       }
     } catch (e) {
-      print('此裝置無法使用語音辨識，請安裝 Google STT');
+      print('此裝置無法使用語音辨識，或發生錯誤：$e');
+      if (e.toString().contains("speech_recognition_not_authorized")) { // 這是 speech_to_text 可能拋出的錯誤
+        print('語音辨識權限未授予，請至「設定」確認相關權限。');
+        // await openAppSettings(); // 可以引導用戶去設定
+      } else {
+        print('此裝置無法使用語音辨識，請安裝 Google STT (如果適用於Android) 或檢查iOS設定');
+      }
       setState(() {
         _audioMode = AudioVisualizerMode.systemPlaying;
       });
